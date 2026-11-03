@@ -753,18 +753,25 @@ impl RemoteClient {
                         "updates",
                         "removes",
                         "accept_branch_conflicts",
+                        "expected_base",
                     ],
                 )?;
                 let source = Self::required_string_arg(&args, "memory_apply", "source")?;
+                let mut body = json!({
+                    "adds": Self::json_array_arg(&args, "adds")?,
+                    "updates": Self::json_array_arg(&args, "updates")?,
+                    "removes": Self::json_array_arg(&args, "removes")?,
+                    "accept_branch_conflicts": Self::json_array_arg(&args, "accept_branch_conflicts")?,
+                });
+                if let Some(expected_base) =
+                    args.get("expected_base").filter(|value| !value.is_null())
+                {
+                    body["expected_base"] = expected_base.clone();
+                }
                 let r = self
                     .client
                     .post(self.url(&format!("/v1/branches/{source}/apply")))
-                    .json(&json!({
-                        "adds": Self::json_array_arg(&args, "adds")?,
-                        "updates": Self::json_array_arg(&args, "updates")?,
-                        "removes": Self::json_array_arg(&args, "removes")?,
-                        "accept_branch_conflicts": Self::json_array_arg(&args, "accept_branch_conflicts")?,
-                    }))
+                    .json(&body)
                     .send()
                     .await?;
                 let body = Self::parse_response(r).await?;

@@ -385,9 +385,12 @@ Request:
   "adds": ["m1"],
   "updates": [{"old_id": "old_m2", "new_id": "new_m2"}],
   "removes": ["m3"],
-  "accept_branch_conflicts": ["mx"]
+  "accept_branch_conflicts": ["mx"],
+  "expected_base": "mh1:…"
 }
 ```
+
+`expected_base` is optional. Omit it, send JSON null, or send a blank string to keep the historical unbound apply. When it is set, it must equal the `main_head` fingerprint from `GET /v1/branches/:name/diff-items` (`mh1:` + SHA-256 of the caller's active main rows). If main has moved, apply responds **409** with a `StaleBase` message and writes nothing. `diff-items` includes `main_head` for that token.
 
 Response:
 

@@ -68,13 +68,16 @@ class BranchesResource:
         removes: list[str] | None = None,
         updates: list[dict[str, str]] | None = None,
         accept_branch_conflicts: list[str] | None = None,
+        expected_base: str | None = None,
     ) -> ApplyResult:
+        """Apply a selection. Pass ``expected_base`` (diff ``main_head``) to reject a moved main."""
         body = _strip_none(
             {
                 "adds": adds,
                 "removes": removes,
                 "updates": updates,
                 "accept_branch_conflicts": accept_branch_conflicts,
+                "expected_base": expected_base,
             }
         )
         data = self._client._request("POST", f"/v1/branches/{name}/apply", json=body)
@@ -155,13 +158,16 @@ class AsyncBranchesResource:
         removes: list[str] | None = None,
         updates: list[dict[str, str]] | None = None,
         accept_branch_conflicts: list[str] | None = None,
+        expected_base: str | None = None,
     ) -> ApplyResult:
+        """Apply a selection. Pass ``expected_base`` (diff ``main_head``) to reject a moved main."""
         body = _strip_none(
             {
                 "adds": adds,
                 "removes": removes,
                 "updates": updates,
                 "accept_branch_conflicts": accept_branch_conflicts,
+                "expected_base": expected_base,
             }
         )
         data = await self._client._arequest("POST", f"/v1/branches/{name}/apply", json=body)

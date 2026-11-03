@@ -754,6 +754,10 @@ pub fn list() -> Value {
                         "items": {"type": "string"},
                         "default": [],
                         "description": "Conflict memory_ids to resolve with branch-wins semantics. Unspecified conflicts stay on main."
+                    },
+                    "expected_base": {
+                        "type": "string",
+                        "description": "Optional main-head fingerprint (mh1:...) this selection was reviewed against. When set, apply is rejected with StaleBase and writes nothing if main has moved. Omit it to keep the unbound apply path. Read main_head from branch diff-items."
                     }
                 },
                 "required": ["source"]
@@ -1672,6 +1676,7 @@ pub async fn call(
                     "updates",
                     "removes",
                     "accept_branch_conflicts",
+                    "expected_base",
                 ],
             )?;
             let source_branch = parse_required_string_arg(&args, "memory_apply", "source")?;
@@ -1686,6 +1691,7 @@ pub async fn call(
                     &args,
                     "accept_branch_conflicts",
                 )?,
+                expected_base: parse_optional_string_arg(&args, "memory_apply", "expected_base")?,
             };
             if selection.adds.is_empty()
                 && selection.updates.is_empty()
@@ -2460,6 +2466,20 @@ fn parse_optional_i64_arg(
     }
 }
 
+fn parse_optional_string_arg(
+    args: &Value,
+    tool: &str,
+    field: &str,
+) -> Result<Option<String>, MemoriaError> {
+    match args.get(field) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(value)) => Ok(Some(value.clone())),
+        Some(_) => Err(MemoriaError::Internal(format!(
+            "Invalid {tool} '{field}': expected string"
+        ))),
+    }
+}
+
 fn parse_apply_string_array(args: &Value, field: &str) -> Result<Vec<String>, MemoriaError> {
     match args.get(field) {
         None => Ok(Vec::new()),
@@ -2514,7 +2534,8 @@ mod tests {
     use super::{
         expect_tool_args, is_pick_conflict_error_message, is_pick_parser_error_message,
         map_pick_conflict, normalize_keys, parse_apply_string_array, parse_apply_updates,
-        safety_prefix, snap_internal, validate_identifier, MAX_IDENTIFIER_LEN, MAX_PICK_KEYS,
+        parse_optional_string_arg, safety_prefix, snap_internal, validate_identifier,
+        MAX_IDENTIFIER_LEN, MAX_PICK_KEYS,
     };
     use memoria_core::MemoriaError;
     use serde_json::json;
@@ -2600,6 +2621,40 @@ mod tests {
     fn apply_updates_error_on_missing_fields() {
         let args = json!({"source": "feature", "updates": [{"old_id": "x"}]});
         assert!(parse_apply_updates(&args).is_err());
+    }
+
+    #[test]
+    fn memory_apply_accepts_optional_expected_base() {
+        let args = json!({
+            "source": "feature",
+            "adds": ["ops-draft"],
+            "expected_base": "mh1:abc"
+        });
+        expect_tool_args(
+            &args,
+            "memory_apply",
+            &[
+                "source",
+                "adds",
+                "updates",
+                "removes",
+                "accept_branch_conflicts",
+                "expected_base",
+            ],
+        )
+        .expect("expected_base is a known apply field");
+        assert_eq!(
+            parse_optional_string_arg(&args, "memory_apply", "expected_base")
+                .unwrap()
+                .as_deref(),
+            Some("mh1:abc")
+        );
+        let omitted = json!({"source": "feature"});
+        assert!(
+            parse_optional_string_arg(&omitted, "memory_apply", "expected_base")
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
