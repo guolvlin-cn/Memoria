@@ -8,6 +8,7 @@ memoria-core = { workspace = true }
 sqlx = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = "0.10"
 chrono = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }

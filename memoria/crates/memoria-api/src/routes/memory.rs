@@ -26,6 +26,7 @@ pub fn api_err_typed(e: memoria_core::MemoriaError) -> (StatusCode, String) {
             StatusCode::UNPROCESSABLE_ENTITY
         }
         Blocked(_) => StatusCode::FORBIDDEN,
+        StaleBase { .. } => StatusCode::CONFLICT,
         _ => StatusCode::INTERNAL_SERVER_ERROR,
     };
     if status.is_server_error() {
@@ -1182,4 +1183,23 @@ pub async fn get_tool_usage(
         .map(|(tool, ts)| serde_json::json!({"tool_name": tool, "last_used_at": ts.to_rfc3339()}))
         .collect();
     Ok(Json(serde_json::json!(items)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::api_err_typed;
+    use axum::http::StatusCode;
+    use memoria_core::MemoriaError;
+
+    #[test]
+    fn stale_base_maps_to_conflict() {
+        let (status, body) = api_err_typed(MemoriaError::StaleBase {
+            expected: "mh1:reviewed".into(),
+            current: "mh1:advanced".into(),
+        });
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert!(body.starts_with("StaleBase"), "{body}");
+        assert!(body.contains("mh1:reviewed"));
+        assert!(body.contains("mh1:advanced"));
+    }
 }

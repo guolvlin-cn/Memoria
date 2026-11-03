@@ -350,10 +350,15 @@ async fn branch_diff_items_payload(
         .take(limit as usize)
         .map(item_to_json)
         .collect();
+    let main_head = git
+        .current_main_head("mem_memories", scope_id)
+        .await
+        .map_err(api_err_typed)?;
 
     Ok(json!({
         "branch": branch_name,
         "against": "main",
+        "main_head": main_head,
         "added": added,
         "updated": updated,
         "removed": removed,
@@ -1015,7 +1020,7 @@ pub async fn apply_branch(
     let response = git
         .selective_apply(&branch_table, "mem_memories", auth.scope_id(), req)
         .await
-        .map_err(api_err)?;
+        .map_err(api_err_typed)?;
     let payload = json!({
         "actor_user_id": auth.user_id,
         "group_id": auth.group_id,

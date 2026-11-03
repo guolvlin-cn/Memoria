@@ -1,3 +1,6 @@
+use crate::base_binding::{
+    authorize_apply, main_head_fingerprint, normalize_expected_base, MainHeadRecord,
+};
 use chrono::NaiveDateTime;
 use memoria_core::MemoriaError;
 use serde::{Deserialize, Serialize};
@@ -231,6 +234,13 @@ pub struct ApplySelection {
     pub updates: Vec<ApplyUpdatePair>,
     #[serde(default)]
     pub accept_branch_conflicts: Vec<String>,
+    /// Main-head fingerprint this selection was reviewed against.
+    ///
+    /// `None`, JSON null, or a blank string keeps the historical apply path.
+    /// A non-empty value must equal [`GitForDataService::current_main_head`]
+    /// or apply returns [`MemoriaError::StaleBase`] and writes nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_base: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -948,6 +958,43 @@ impl GitForDataService {
         Ok(result)
     }
 
+    /// Fingerprint of this user's active rows on `main_table`.
+    ///
+    /// This is the `head(main)` token compared with [`ApplySelection::expected_base`].
+    pub async fn current_main_head(
+        &self,
+        main_table: &str,
+        user_id: &str,
+    ) -> Result<String, MemoriaError> {
+        let main_table = validate_identifier(main_table)?;
+        let db = quote_identifier(&self.db_name);
+        let sql = format!(
+            "SELECT memory_id, memory_type, content FROM {db}.{main_table} \
+             WHERE user_id = ? AND is_active = 1"
+        );
+        let rows = sqlx::query(&sql)
+            .bind(user_id)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(db_err)?;
+        let records = rows
+            .iter()
+            .map(|row| {
+                Ok(MainHeadRecord {
+                    memory_id: row.try_get::<String, _>("memory_id").map_err(db_err)?,
+                    memory_type: row
+                        .try_get::<String, _>("memory_type")
+                        .unwrap_or_else(|_| "semantic".into()),
+                    content: row
+                        .try_get::<Option<String>, _>("content")
+                        .map_err(db_err)?
+                        .unwrap_or_default(),
+                })
+            })
+            .collect::<Result<Vec<_>, MemoriaError>>()?;
+        Ok(main_head_fingerprint(&records))
+    }
+
     pub async fn selective_apply(
         &self,
         branch_table: &str,
@@ -957,6 +1004,14 @@ impl GitForDataService {
     ) -> Result<ApplyResult, MemoriaError> {
         let branch_table = validate_identifier(branch_table)?.to_string();
         let main_table = validate_identifier(main_table)?.to_string();
+
+        // Context-bound publish: refuse before any branch read or main write
+        // when the caller pinned a base and main has since moved.
+        if normalize_expected_base(selection.expected_base.as_deref()).is_some() {
+            let current_head = self.current_main_head(&main_table, user_id).await?;
+            authorize_apply(selection.expected_base.as_deref(), &current_head)?;
+        }
+
         let db = quote_identifier(&self.db_name);
         let branch_table_ref = format!("{db}.{branch_table}");
         let main_table_ref = format!("{db}.{main_table}");
